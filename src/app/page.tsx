@@ -1,17 +1,64 @@
 'use client';
 import { useRef, useState } from 'react';
 
+declare global {
+  interface Window {
+    SpeechRecognition: any;
+    webkitSpeechRecognition: any;
+  }
+
+  interface SpeechRecognition extends EventTarget {
+    lang: string;
+    continuous: boolean;
+    interimResults: boolean;
+    onresult: (event: SpeechRecognitionEvent) => void;
+    onerror: (event: SpeechRecognitionErrorEvent) => void;
+    onend: () => void;
+    start: () => void;
+    stop: () => void;
+  }
+
+  interface SpeechRecognitionEvent extends Event {
+    readonly resultIndex: number;
+    readonly results: SpeechRecognitionResultList;
+  }
+
+  interface SpeechRecognitionErrorEvent extends Event {
+    readonly error: string;
+  }
+}
+
+
 export default function Home() {
   const [prompt, setPrompt] = useState('');
   const [language, setLanguage] = useState<'en' | 'ur'>('en');
   const [downloading, setDownloading] = useState(false);
   const [isListening, setIsListening] = useState(false);
-  const recognitionRef = useRef<any>(null);
+  const recognitionRef = useRef<SpeechRecognition | null>(null);
 
   const speak = (text: string, langCode: string) => {
+    const synth = window.speechSynthesis;
+    const voices = synth.getVoices();
+
+    let voice: SpeechSynthesisVoice | null = null;
+
+    if (langCode === 'ur-PK') {
+      voice = voices.find(v =>
+        v.lang.toLowerCase().includes('ur') || v.name.toLowerCase().includes('urdu')
+      ) || null;
+    }
+
+    if (!voice && langCode === 'en-US') {
+      voice = voices.find(v => v.lang === 'en-US') || null;
+    }
+
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.lang = langCode;
-    speechSynthesis.speak(utterance);
+    if (voice) {
+      utterance.voice = voice;
+    }
+
+    synth.speak(utterance);
   };
 
   const generateExcel = async () => {
@@ -38,15 +85,15 @@ export default function Home() {
     setDownloading(false);
 
     if (language === 'en') {
-      speak("Your Excel sheet is ready for download.", 'en-US');
+      speak('Your Excel sheet is ready for download.', 'en-US');
     } else {
-      speak("آپ کی شیٹ تیار ہے", 'ur-PK');
+      speak('آپ کی شیٹ تیار ہے', 'ur-PK');
     }
   };
 
   const startListening = () => {
     const SpeechRecognition =
-      (window as any).webkitSpeechRecognition || (window as any).SpeechRecognition;
+      window.SpeechRecognition || (window as any).webkitSpeechRecognition;
 
     if (!SpeechRecognition) {
       alert('Speech Recognition not supported in this browser.');
@@ -60,7 +107,7 @@ export default function Home() {
 
     let finalTranscript = '';
 
-    recognition.onresult = (event: any) => {
+    recognition.onresult = (event: SpeechRecognitionEvent) => {
       let interimTranscript = '';
 
       for (let i = event.resultIndex; i < event.results.length; i++) {
@@ -75,13 +122,14 @@ export default function Home() {
       setPrompt(finalTranscript + interimTranscript);
     };
 
-    recognition.onerror = (event: any) => {
-      console.error("🎙️ Speech error:", event.error);
+    recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
+      console.error('🎙️ Speech error:', event.error);
       setIsListening(false);
+
       if (event.error === 'no-speech') {
-        alert("❌ No speech detected. Please try again and speak clearly.");
+        alert('❌ No speech detected. Please try again.');
       } else if (event.error === 'not-allowed') {
-        alert("❌ Microphone access denied.");
+        alert('❌ Microphone access denied.');
       } else {
         alert(`❌ Speech error: ${event.error}`);
       }
@@ -97,12 +145,12 @@ export default function Home() {
   };
 
   const stopListening = () => {
-  if (recognitionRef.current) {
-    recognitionRef.current.stop();
-    setIsListening(false);
-    console.log("🛑 Manually stopped listening");
-  }
-};
+    if (recognitionRef.current) {
+      recognitionRef.current.stop();
+      setIsListening(false);
+      console.log('🛑 Stopped listening');
+    }
+  };
 
   return (
     <main className="min-h-screen w-full flex flex-col items-center justify-start p-4">
@@ -131,31 +179,30 @@ export default function Home() {
         />
 
         <div className="flex flex-col sm:flex-row gap-3">
-  {!isListening ? (
-    <button
-      onClick={startListening}
-      className="flex-1 py-3 text-lg bg-green-600 text-white rounded-xl"
-    >
-      🎙️ Speak
-    </button>
-  ) : (
-    <button
-      onClick={stopListening}
-      className="flex-1 py-3 text-lg bg-red-600 text-white rounded-xl"
-    >
-      🛑 Stop Listening
-    </button>
-  )}
+          {!isListening ? (
+            <button
+              onClick={startListening}
+              className="flex-1 py-3 text-lg bg-green-600 text-white rounded-xl"
+            >
+              🎙️ Speak
+            </button>
+          ) : (
+            <button
+              onClick={stopListening}
+              className="flex-1 py-3 text-lg bg-red-600 text-white rounded-xl"
+            >
+              🛑 Stop Listening
+            </button>
+          )}
 
-  <button
-    onClick={generateExcel}
-    className="flex-1 py-3 text-lg bg-blue-600 text-white rounded-xl disabled:opacity-50"
-    disabled={downloading}
-  >
-    {downloading ? '⏳ Generating...' : '⬇️ Download Excel'}
-  </button>
-</div>
-
+          <button
+            onClick={generateExcel}
+            className="flex-1 py-3 text-lg bg-blue-600 text-white rounded-xl disabled:opacity-50"
+            disabled={downloading}
+          >
+            {downloading ? '⏳ Generating...' : '⬇️ Download Excel'}
+          </button>
+        </div>
       </div>
     </main>
   );
